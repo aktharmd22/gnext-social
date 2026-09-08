@@ -43,8 +43,23 @@ PHP_VERSION="$("$PHP" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
     Then re-run with PHP=/path/to/php8.3 bash $0"
 ok "php $PHP_VERSION at $(command -v "$PHP")"
 
+# The module list is captured once and matched in the shell rather than piped
+# into grep -q per extension.
+#
+# `php -m | grep -q x` is a trap under `set -o pipefail`: grep exits the moment
+# it matches, closing the pipe, so php takes SIGPIPE and exits 141 -- and
+# pipefail then reports the pipeline as failed even though the match succeeded.
+# It is a race, so it passes or fails depending on how fast php flushes, which
+# is the worst kind of check to put in front of a deploy.
+MODULES=" $("$PHP" -m 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr '\n' ' ') "
+
 for ext in pdo_mysql mbstring openssl tokenizer xml ctype bcmath fileinfo curl zip gd; do
-    "$PHP" -m | grep -qix "$ext" || die "PHP extension '$ext' is missing. Enable it in hPanel > PHP Configuration."
+    case "$MODULES" in
+        *" $ext "*) ;;
+        *) die "PHP extension '$ext' is missing.
+    Enable it in hPanel > PHP Configuration, then run this again.
+    What this php reports: $(echo "$MODULES" | tr ' ' '\n' | grep -c . ) modules loaded." ;;
+    esac
 done
 ok "all required PHP extensions present"
 
