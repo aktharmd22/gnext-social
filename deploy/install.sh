@@ -90,18 +90,19 @@ ok "migrations applied"
 
 # ------------------------------------------------------------------ build ----
 say "Front-end assets"
-if [ -d public/build ] && [ -f public/build/manifest.json ]; then
-    ok "public/build present (committed or previously built)"
+if [ -f public/build/manifest.json ]; then
+    ok "public/build present, came down with the repository"
 elif command -v npm >/dev/null; then
     npm ci --omit=dev 2>/dev/null || npm install
     npm run build
     ok "assets built on the server"
 else
-    die "No public/build and no npm on this host.
-    Build locally and commit the result:
-        npm run build
-        git add -f public/build && git commit -m 'build assets for deploy' && git push
-    Then on the server: git pull && bash deploy/install.sh"
+    die "No public/build, and no npm on this host to make one.
+    On your machine:
+        npm run build && git add public/build
+        git commit -m 'build assets' && git push
+    Here:
+        cd $APP_ROOT && git pull && bash deploy/install.sh"
 fi
 
 # ------------------------------------------------------------- permissions ---
@@ -126,12 +127,38 @@ cp deploy/public_html/.htaccess  "$DOCROOT/.htaccess"
 cp public/robots.txt             "$DOCROOT/robots.txt"  2>/dev/null || true
 cp public/favicon.ico            "$DOCROOT/favicon.ico" 2>/dev/null || true
 
-# Symlinks, not copies: a git pull then updates the served assets with no
-# second step, and nothing can drift between the two locations.
-ln -sfn "$APP_ROOT/public/build"       "$DOCROOT/build"
-ln -sfn "$APP_ROOT/public/fonts"       "$DOCROOT/fonts"
-ln -sfn "$APP_ROOT/storage/app/public" "$DOCROOT/storage"
-ok "front controller, rewrite rules and asset links in place"
+# Symlinks are preferred -- a git pull then updates the served assets with no
+# second step -- but this host may forbid them. Test rather than assume: a
+# broken link here serves a blank, unstyled application.
+if ln -sfn "$APP_ROOT/public/build" "$DOCROOT/build" 2>/dev/null && [ -d "$DOCROOT/build" ]; then
+    ln -sfn "$APP_ROOT/public/fonts" "$DOCROOT/fonts"
+    ok "assets linked (a git pull updates them with no further step)"
+    LINKED=yes
+else
+    warn "symlinks are not permitted here; copying assets instead"
+    warn "update.sh re-copies them, so keep deploying with that script"
+    rm -rf "$DOCROOT/build" "$DOCROOT/fonts"
+    cp -r public/build "$DOCROOT/build"
+    cp -r public/fonts "$DOCROOT/fonts"
+    ok "assets copied"
+    LINKED=no
+fi
+
+# Uploaded media is a real directory inside the web root, never a symlink.
+# Meta fetches every image and video by URL, so this path has to be reachable
+# with certainty -- a link that silently failed would mean every publish fails
+# at the last step, reported by Meta rather than caught here.
+mkdir -p "$DOCROOT/storage"
+chmod 755 "$DOCROOT/storage"
+
+if grep -q '^GNEXT_PUBLIC_DISK_ROOT=' .env; then
+    sed -i "s|^GNEXT_PUBLIC_DISK_ROOT=.*|GNEXT_PUBLIC_DISK_ROOT=$DOCROOT/storage|" .env
+else
+    printf '\nGNEXT_PUBLIC_DISK_ROOT=%s\n' "$DOCROOT/storage" >> .env
+fi
+ok "media disk points at $DOCROOT/storage"
+
+ok "front controller and rewrite rules in place"
 
 # ------------------------------------------------------------------ caches ---
 say "Caching configuration"
@@ -142,9 +169,16 @@ ok "config, routes and views cached"
 
 # ------------------------------------------------------------------- cron ----
 say "Cron"
+if command -v crontab >/dev/null; then
+    CRON_HOW="Add these two lines with:  crontab -e"
+else
+    CRON_HOW="crontab is not available over SSH on this host.
+    Add these in hPanel > Advanced > Cron Jobs, both set to run every minute."
+fi
+
 cat <<CRON
 
-    Add these two lines with:  crontab -e
+    $CRON_HOW
 
     # Laravel scheduler: dispatches due posts, recovers missed ones,
     # checks token health, captures insights, sends the weekly digest.

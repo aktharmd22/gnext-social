@@ -38,9 +38,22 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Media Meta is expected to fetch.
+         *
+         * Normally storage/app/public reached through the storage:link symlink.
+         * That symlink is not always possible: shared hosts routinely put
+         * symlink() in disable_functions, and a link that silently did not get
+         * created is not a cosmetic problem here -- Meta fetches every image
+         * and video by URL, so unreachable media means every publish fails at
+         * the last step, with an error from Meta rather than from us.
+         *
+         * GNEXT_PUBLIC_DISK_ROOT points the disk at a real directory inside the
+         * web root instead, removing the symlink from the path entirely.
+         */
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
+            'root' => env('GNEXT_PUBLIC_DISK_ROOT') ?: storage_path('app/public'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,

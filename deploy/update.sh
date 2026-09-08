@@ -52,6 +52,23 @@ else
     ok "assets unchanged"
 fi
 
+# If assets were copied rather than linked, the pull updated public/build in
+# the repository but not the copy the web server actually serves.
+say "Web root"
+DOCROOT="${DOCROOT:-$HOME/domains/gnextsocial.gnext.space/public_html}"
+if [ -d "$DOCROOT/build" ] && [ ! -L "$DOCROOT/build" ]; then
+    rm -rf "$DOCROOT/build" "$DOCROOT/fonts"
+    cp -r public/build "$DOCROOT/build"
+    cp -r public/fonts "$DOCROOT/fonts"
+    ok "assets re-copied (this host does not allow symlinks)"
+else
+    ok "assets are symlinked, nothing to copy"
+fi
+
+cp deploy/public_html/index.php "$DOCROOT/index.php"
+cp deploy/public_html/.htaccess "$DOCROOT/.htaccess"
+ok "front controller and rewrite rules refreshed"
+
 say "Database"
 "$PHP" artisan migrate --force
 ok "migrations applied"
