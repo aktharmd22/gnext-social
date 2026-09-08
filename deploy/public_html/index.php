@@ -32,7 +32,19 @@ define('LARAVEL_START', microtime(true));
 $appRoot = getenv('GNEXT_APP_ROOT') ?: '';
 
 if ($appRoot === '') {
-    foreach ([dirname(__DIR__, 3).'/gnextsocial', dirname(__DIR__, 2).'/gnextsocial'] as $candidate) {
+    $candidates = [
+        // Beside public_html, inside the domain folder. That folder is not
+        // served either, so this is exactly as safe as the home directory and
+        // keeps everything for one site in one place.
+        dirname(__DIR__).'/app',
+        dirname(__DIR__).'/gnextsocial',
+
+        // Home directory.
+        dirname(__DIR__, 3).'/gnextsocial',
+        dirname(__DIR__, 2).'/gnextsocial',
+    ];
+
+    foreach ($candidates as $candidate) {
         if (is_file($candidate.'/vendor/autoload.php')) {
             $appRoot = $candidate;
             break;

@@ -11,7 +11,9 @@
 #
 set -euo pipefail
 
+# Wherever install.sh put it. Override with APP_ROOT= if you moved it.
 APP_ROOT="${APP_ROOT:-$HOME/gnextsocial}"
+[ -d "$APP_ROOT" ] || APP_ROOT="$HOME/domains/gnextsocial.gnext.space/app"
 PHP="${PHP:-php}"
 
 say () { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
