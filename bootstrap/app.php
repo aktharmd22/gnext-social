@@ -32,6 +32,40 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => EnsureAdmin::class,
         ]);
+
+        /*
+         * Proxy trust, for running behind Cloudflare or any other CDN.
+         *
+         * Three things break without it when the proxy terminates TLS:
+         *
+         *  - Generated URLs come out http://, and a signed client review link
+         *    generated as http but visited as https fails its own signature
+         *    check. The reviewer gets 403 on a link that is perfectly valid.
+         *  - Every request appears to come from the proxy, so the login
+         *    throttle counts all users in one bucket: one person fumbling a
+         *    password locks out the whole team.
+         *  - The activity log records the proxy's address on every row, which
+         *    makes the audit trail worthless.
+         *
+         * Left empty by default, and that is deliberate rather than lazy. This
+         * origin is reachable by its own IP, so trusting forwarded headers from
+         * anyone would let a direct caller claim any address they like and walk
+         * past the rate limiter. Only set TRUSTED_PROXIES once traffic actually
+         * arrives through a proxy, and prefer that proxy's published ranges to
+         * a blanket '*'.
+         */
+        $proxies = trim((string) env('TRUSTED_PROXIES', ''));
+
+        if ($proxies !== '') {
+            $middleware->trustProxies(
+                at: $proxies === '*' ? '*' : array_values(array_filter(array_map('trim', explode(',', $proxies)))),
+                headers: Request::HEADER_X_FORWARDED_FOR
+                    | Request::HEADER_X_FORWARDED_HOST
+                    | Request::HEADER_X_FORWARDED_PORT
+                    | Request::HEADER_X_FORWARDED_PROTO
+                    | Request::HEADER_X_FORWARDED_AWS_ELB
+            );
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         /*
